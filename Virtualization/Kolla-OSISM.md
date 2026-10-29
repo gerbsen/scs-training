@@ -100,7 +100,7 @@ ansible-playbook -i inventory -u ANSIBLEUSER playbook/testplay.yaml
     - Management tooling (ARA, netbox, phpmyadmin, optional download proxy)
     - Observability tooling (netdata, prometheus)
     - k3s Kubernetes cluster for operator services (add-ons)
-    - Optional: Ceph deployment (w/ ceph-ansible or rook)
+    - Optional: Ceph deployment (w/ ceph-ansible)
 * OSISM is the reference implementation for the Virtualization (IaaS) layer in
     the SCS project
     - It's used by most SCS compliant production environments (6 plus a few more
@@ -116,7 +116,7 @@ ansible-playbook -i inventory -u ANSIBLEUSER playbook/testplay.yaml
 * The service containers are not managed via ansible and docker, but
   orchestrated with Kubernetes (K8s).
 * The orchestration is done with K8s operators
-    - K8s operators is software that knows how to manage a service, i.e.
+    - A K8s operator is software that knows how to manage a service, i.e.
       knows how to bring the service up, how to change settings on it,
       how to get it back working in some cases of breakage, how to scale it
       up and down and how to remove it again.
@@ -128,7 +128,23 @@ ansible-playbook -i inventory -u ANSIBLEUSER playbook/testplay.yaml
 * Used by a number of production environments (amongst which StackIT, not SCS-compliant,
   and upcoming UhuruTec/Yorizon which will be SCS-compatible).
 
-#### The OSISM manager node
+#### The seeding
+* The manager is (below) will be used for doing administrative operations on the
+  IaaS environment. It is driven by a git configuration repository.
+  It should be a (modest) physical machine or permanently running VM.
+* The manager manages itself. For bootstrapping we need a seed environment.
+    - The seed environment needs to be a Linux environment, where we run the
+      cookiecutter for interactively setting up the config repository.
+    - For convenience a container can be used to do this.
+    - After bootstrapping the manager successfully, the seed environment is
+      no longer needed. However: Store the generated secrets (vault password
+      and the keepass file) before cleaning up. If you just used a directory
+      on some Linux workstation, you can leave it and use it to access git
+      from there. But keep the secrets safe and secure!
+
+Reference: <https://osism.tech/docs/guides/deploy-guide/seed>
+
+#### The OSISM manager node `[manager]`
 * It is the ansible control node of your setup
 * Acts as central control point for all changes, the only node where you login during
   normal operations
@@ -139,10 +155,10 @@ ansible-playbook -i inventory -u ANSIBLEUSER playbook/testplay.yaml
       be against policy (except maybe for debugging). Local changes are strongly
       discouraged and potentially destroy the manageability/trustworthiness of the
       system.
-* Hosts management tooling
+* Hosts management tooling `[monitoring]`
     - ARA, netbox, database, phpmyadmin, OpenSearch(optional)
     - CLI tooling for the operator
-    - Homer Web Frontend for the operator, Traefik ("Ingress")
+    - Homer Web Frontend for the operator, Traefik (Reverse proxy aka "Ingress")
     - Backends for the above: Redis, Postgres
 * The configuration repository is stored in `/opt/configuration/`
     - Main location for config settings there in `inventory/` and `environments/` directories,
@@ -150,7 +166,32 @@ ansible-playbook -i inventory -u ANSIBLEUSER playbook/testplay.yaml
         * Rendered OpenStack config files in `/etc/kolla/`, collected logs in `/var/log/kolla/`
 * Deployment scripts in `/opt/configuration/scripts/`
 
-#### Node type: Control node
+Reference: <https://osism.tech/docs/concepts/manager>
+
+Note: The terms in brackets refer to the role assigned in the inventory (`inventory/20-roles`
+in the config repository).
+
+#### Manager, Netbox, Metalbox
+* You can setup netbox to not just keep track of your (hardware) inventory,
+  but to control it from there. If configured so, `osism sync inventory` will
+  pull updates from netbox.
+* You can go a step further and control the hardware provisioning using Ironic
+  from the manager node on steroids: This is the Metalbox.
+    - It also does proxying and optionally mirroring for artifacts that you
+      need to setup the other nodes, so you control network accesses more
+      easily. By mirroring the needed software ahead of time, a fully
+      air-gapped installation is possible.
+    - It also supports SONiC Zero-Touch-Povisioning (ZTP), so you deploy
+      and configure your switch software for modern dynamic L3 underlay 
+      networking with frr.
+* For simplicity we won't go into SONiC networking or MetalBox in this training,
+  but stick to classical static IPv4 L2 underlays. Deployments that want to
+  scale regions/cells beyond a few hundred nodes need to look into L3 underlays
+  and certainly want the comfort of hardware deployment with MetalBox.
+
+Reference: <https://osism.tech/docs/concepts/metalbox>
+
+#### Node type: Control node `[control]`
 * Control nodes host infrastructure and monitoring
     - Database (mariadb/galera cluster, proxysql, memcached)
     - rabbitmq
@@ -170,51 +211,59 @@ ansible-playbook -i inventory -u ANSIBLEUSER playbook/testplay.yaml
     - aodh (if enabled)
 * Avoid overloading them
 
-#### Node type: Compute node
+#### Node type: Compute node `[compute]`
 * Compute nodes host the virtual machines
 * To do so, they host a few OpenStack services
     - cinder, iSCSI (tgtd, iscsid)
     - nova (compute, libvirt, ssh)
     - neutron metatdata agent
+    - openvswitch
 * Also prometheus, fluentd
 * Capacity determined by RAM and CPU cores
 
-#### Node type: Network node
+#### Node type: Network node `[network]`
 * Networking functions
     - neutron
     - octavia
     - openvswitch and OVN
 
-#### Node type: Storage node
-* Ceph containers
-    - OSDs
-    - Mon+Mgr, MDS, RGW
+#### Node type: Storage control node [`ceph-control`]
+* Ceph Mon+Mgr
+* Ceph RGW, MDS (optional)
+
+#### Node type: Storage resource node [`ceph-resource`]
+* Ceph OSDs
 
 ### Planning hardware
 
-See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
+See also <https://osism.tech/docs/guides/concept-guide/bom>
 
 #### Hyperconverged vs. Fully decomposed
 * We need some nodes to run OSISM
     - 1 manager node (M)
     - 3 control plane nodes (M)
     - 3 network nodes (M)
-    - 3 ceph storage nodes (S)
+    - 3 ceph storage nodes (S) - colocating ceph-control with ceph-resource
     - 3 compute nodes (L), better 4+
         * The 4th compute node helps with doing rolling upgrades for clusters of all kinds
         * E.g. a Cluster-API cluster with 3 anti-affinity control plane nodes needs a 4th compute host
           for a rolling upgrade
-* A fully decomposed setup would thus have 14+ nodes
+* A fully decomposed setup would thus have 14+ nodes (or 17+ without colocating ceph-control and -resource).
 * We can combine some functions
-    - Combine storage and Compute nodes
-    - Combine Control Plane and Network Nodes
+    - Combine storage resource and Compute nodes
+    - Combine Control Plane, storage control and Network Nodes
     - This results in a setup with 8 nodes
     - This is how the testbed setup looks like (7 nodes actually, only 3 for compute)
+* Alternative combination (HWLab)
+    - Network nodes on three of the compute nodes
+        * More powerful CPUs, networking capabilities
+    - Rest is decomposed there
 * We can go fully hyperconverged (HCI)
     - Then we have 4 large nodes plus one small manager node
     - Reasonable compromise for small systems
     - Some QoS needed to ensure stability in high-load situations
         * Avoid control rabbitmq dropping messages due to customer VM overload
+        * Reserve sufficient RAM and Cores from being used by OpenStack VMs
     - More decomposed setups can more easily scale
     - Your security architects may want network nodes to be separate from compute nodes ...
 
@@ -263,13 +312,22 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
 * Add requirements up when combining roles in not fully decomposed setups
 * Smaller setups will work
     - If you carefully design QoS settings to avoid starvation
-    - If uou avoid too high load
+    - If you avoid too high load
     - This adds complexity and the engineering time and operational trouble tends to be more
       expensive than the saved hardware cost, at least for production / production-like systems
+* If you co-locate something on the compute nodes: Ensure to do host reservations for CPUs
+    and memory.
+    - Go with at least half of the memory requirements listed above, so fully HCI needs at least
+      28GiB reservation (2 OSDs assumed, no OpenSearch).
+    - Recommendation is to opt for stability and avoid squeezing out the last bit of capacity.
 
 ### OSISM Installation workflow
 
 #### Overview over the steps
+* Create network design
+    - Understand the different networks (see next slide)
+    - Ensure you have DNS, NTP, outgoing internet access (or set up repository mirrors
+      and image registries)
 * Procure hardware, set it up, connecting it to the network
     - With (static) DHCP this works conveniently
 * Bootstrap manager using the Ubuntu auto-install image
@@ -283,6 +341,121 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
     - Customize the setup according to your needs
     - Roll the configuration using the ansible playbooks (via OSISM CLI)
 
+References: <https://osism.tech/docs/guides/deploy-guide/seed>, <https://osism.tech/docs/guides/deploy-guide/manager>
+
+#### Network design
+
+|   Name, IFace     | Kolla settings      | Mgr | Purpose |
+|-------------------|---------------------|-----|---------|
+| Prov, `___`       | (`ansible_host`)    |  ✓  | Provisioning, Host management |
+| Ctrl, `___`       | `network_interface` |  ✓  | Default for many things |
+| .                 | `api_interface`     |  ✓  | Internal API (`kolla_internal_vip_address`, `kolla_internal_fqdn`) |
+| .	                | `migration_interface` | ✓ | Nova live migration (possibly move to VM2VM) |
+| .                 | `dns_interface`     |  ✓  | designate |
+| .                 | `octavia_network_interface` | ✓ | LoadBalancer |
+| ExtApi, `___`     | `kolla_external_vip_interface` | * | External API (`kolla_external_vip_address`, `kolla_external_fqdn`), can be co-located with Ctrl if needed |
+| VM2VM, `___`      | `tunnel_interface`  |  -  | Geneve east-west traffic |
+| Ext, `___`        | `neutron_external_interface` | - | FIP provider network (north-south), no *host* IPs |
+| Ceph, `___`       | `storage_interface` | (✓) | Ceph (Front and replication) |
+| .                 | `cluster_interface` | (✓) | ditto
+
+References: <https://docs.openstack.org/kolla-ansible/latest/admin/production-architecture-guide.html>, <https://docs.openstack.org/kolla-ansible/latest/admin/advanced-configuration.html>
+
+#### Network Sizing and Sharing:
+* Most server hardware has an additional BMC network for IPMI/Redfish/Vendor-Management for Out-Of-Band management which is not considered here
+* Ceph in standard mode writes each block 3 times, so beyond the write over the network, 2 additional copies are transferred.
+    - A 25Gbps network thus won't give you more than ~850MB/s write speed. (Read speed can be 3x faster.)
+    - Avoid starving your storage, put it on separate physical interfaces
+    - Strictly speaking, your manager does not need ceph network access for ceph to work, but you lose the ceph management tool access from the manager then
+* Ctrl should have low-latency connections, avoid overloading it
+    - Moderate bandwidth requirements except ...
+    - If you keep the `migration_interface` to its default, you get high bandwidth requirements for live-migration
+* Provisioning network can be shared with Ctrl network (but ensure redundancy then, e.g. via MLAG)
+* VM2VM limits the inter-VM bandwidth, customers -- sizing depends on customer's expectations
+    - You might move `migration_interface` here if you want to have a physically separate Ctrl with lower performance requirements
+* Ext will connect your cloud to the outside world (which might also be your corporate network)
+    - no need to have more bandwidth here than your connection to the outside world ...
+    - you can have several provider networks with different properties
+* You can have your external API as additional VIP in the Ctrl network instead of an own network.
+    - You should use TLS also for internal API access anyway
+    - Your netowrk security filtering will be a bit more complex, but is feasible
+    - Security folks won't like it ...
+* Using VLANs to share a physical connection is reasonable (but keep ceph physically separate)
+* Example setup:
+    * 25 Gbps for ceph
+    * 25 Gbps in 4 VLANs for Prov/Ctrl, ExtAPI, Ext, VM2VM
+* Another example:
+    * 2x25Gbps for ceph (separating the two networks or doing LACP/MCLAG)
+    * 25Gbps for VM2VM, with `migration_interface` there
+    * 10Gbps for Prov/Ctrl
+    * 2.5Gbps in 2 VLANs for ExtAPI, Ext
+
+Beware of assymmetric routing issues for multi-homed Linux machines!
+* Secondary routing tables with routing rules (policy-based routing) needed if you go for a traditional setup
+    - You can only have one default route without this and the Linux kernel will happily send responses via the "wrong" interface, as routing decisions solely depend on the destination address.
+    - The provider net north-south traffic is not routed by the kernel's routing tables, so this one does not conflict. (Your hosts won't even have IP addresses on that network, only gateway and VMs do.)
+* ... or you use ExtApi as your default route (so software downloads go via it), and set up static routes for anything internal (DNS, NT) and use wireguard for all admin access to api-int and manager services.
+
+
+Example network config with a secondary routing table (149):
+```yaml
+# inventory/group_vars/compute/network.yaml
+network_vlans:
+  bond0.148:    # Control/Management network
+	id: 148     # VLAN ID
+    link: bond0 # Underlaying network interface
+	mtu: 9000	# Allow for Jumbo packets internally (Ctrl)
+    addresses:
+      - "10.80.148.{{ 10+node_id }}/24"  # up to ~240 hosts
+    routes:
+      - to: 0.0.0.0/0   # default
+        via: 10.80.148.1
+  bond0.149: # Separate ExtAPI network (we could do without)
+	id: 149
+	link: bond0
+	mtu: 1500	# Just play it safe, as this is for ext
+	addresses:
+	  - "10.80.149.{{10+node_id}}" # Use .8 as VIP for api
+	routes:
+	  - to: 0.0.0.0/0
+	    via: 10.80.149.1        # Gateway for ExtAPI network
+		table: 149
+		#on-link and advertised-mss not really needed
+	routing-policy:
+	  - from: 10.80.149.0/24    # Default from ExtAPI net
+	    to: 0.0.0.0/0           # To the world
+		table: 149              # Use 2ndary routing table
+	  - from: 10.80.149.0/24    # But internal traffic should
+	    to: 10.80.148.0/23      # use the main routing table
+		table: 254              # main
+		priority: 60
+	  - from: 10.80.149.0/23    # On the manager we need to
+	    to: 172.16.0.0/12       # reach the docker containers
+		table: 254              # main
+		priority: 61
+  bond0.150:    # VM2VM network (east-west)
+	id: 150     # VLAN ID
+    link: bond0 # Underlaying network interface
+	mtu: 9000	# Allow for Jumbo packets internally (VM2VM)
+    addresses:
+      - "10.80.150.{{ 10+node_id }}/24"
+	mtu: 9000	# Allow for Jumbo packets internally (VM2VM)
+    # no routing
+  bond0.151:    # External Provider network (north-south)
+	mtu: 9000	# If the gateway handles it, otherwise 1500
+	id: 151
+	link: bond0
+	# No IP addresses assigned to hosts in ExternalProvider
+  # Ceph is on a different network device here,
+  # thus not covered here in the vlans section
+```
+
+Roll out with `osism sync inventory` and `osism apply network`.
+Do a sanity check of the generated `/etc/netplan/01-osism.yaml` to avoid being locked out.
+`osism console --type clush all` with `sudo netplan apply` will render the changes effective.
+(`osism apply facts` will update your facts cache`). Look at routing tables with
+`ip route show table 149` and `ip rule show` for the routing rules.
+
 #### Bootstrapping hardware (BareMetal provisioning) - Manager and all other resource nodes
 * Auto-install images are available from OSISM <https://github.com/osism/node-image>
     - Variants based on disk setup (SCSI/SSD sda vs. NVMe nvme0n1)
@@ -293,19 +466,20 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
     - You can set up a PXE server and have servers do a PXE boot
     - Physically attaching USB stick works as well
 * Server needs (outgoing) internet connection to download software and updates
-    - If that is unwanted, a package mirror can be set up (see air-gap blog articles)
+    - If that is unwanted, a package mirror can be set up on the manager node (see below)
+      (see air-gap blog articles or use the metalbox pieces)
 * Server install phases:
     - Server shuts down after first installation phase, after which (virtual) boot image should be removed
     - Server sets up some services (mostly in docker containers) in the second phase and shuts down again
     - Server is ready after switching it on the 3rd time
 * You can also manually provision the hardware in case you need to
-  <https://docs.scs.community/docs/iaas/guides/deploy-guide/provisioning>
+  <https://osism.tech/docs/guides/deploy-guide/provisioning>
 
 #### Creating the configuration repository (seed node)
 * This should be prepared on the operators control outside of the cloud
     - A desktop system (preferably Linux, but Mac or WSL work as well) that supports docker
     - A small VM somewhere can be setup if needed; it can be disposed after config repo and manager node are set up
-* Follow the steps on <https://docs.scs.community/docs/iaas/guides/deploy-guide/seed>
+* Follow the steps on <https://osism.tech/docs/guides/deploy-guide/seed>
 * Chose where you want to store your configuration repository
     - Any git server will do, your company's git, your private gitlab, a public github will all do
     - Secrets are stored separately
@@ -317,7 +491,7 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
     -e TARGET_UID="$(id -u)" -e TARGET_GID="$(id -g)" \
     -v $(pwd)/cookiecutter-output:/output --rm -it quay.io/osism/cookiecutter
 ```
-* Answer the questions from cookiecutter, see <https://docs.scs.community/docs/iaas/guides/configuration-guide/configuration-repository/#creating-a-new-configuration-repository>
+* Answer the questions from cookiecutter, see <https://osism.tech/docs/guides/configuration-guide/configuration-repository/#creating-a-new-configuration-repository>
 * Output is stored in directory `cookiecutter-output/`. Commit and push it to your git.
 
 ####  Secrets handling
@@ -326,11 +500,11 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
 * `secrets/vaultpass` contains the password for your ansible vault and is stored as a `keepass` file.
     - The *initial* password for the Keepass file is `password`. Change it.
     - Alternatively handle the secrets in another vault of your choice.
-* Makefile targets to get ansible vault secrets, see <https://docs.scs.community/docs/iaas/guides/configuration-guide/configuration-repository/#working-with-encrypted-files>, e.g. `make ansible_vault_show FILE=all`
+* Makefile targets to get ansible vault secrets, see <https://osism.tech/docs/guides/configuration-guide/configuration-repository/#working-with-encrypted-files>, e.g. `make ansible_vault_show FILE=all`
 * Keepass clients exist for many operating systems (incl. Android), there is also a nextcloud app
 
 #### Inventory
-<https://docs.scs.community/docs/iaas/guides/configuration-guide/configuration-repository/#step-4-post-processing-of-the-generated-configuration>
+<https://osism.tech/docs/guides/configuration-guide/configuration-repository/#step-4-post-processing-of-the-generated-configuration>
 
 * Cookiecutter creates node `node01` for your manager. Adjust it to the real name.
     - It is convenient to ensure that DNS resolution works with the used names
@@ -344,7 +518,7 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
     - You can set `host_vars` in `environments/manager/host_vars/`
 * Global settings: DNS, NTP, .... `environments/configuration.yml`
 * Deploy TLS (SSL) certificates in `environments/kolla/certificates/haproxy.pem` and `haproxy-internal.pem`
-* Parameter reference: <https://docs.scs.community/docs/iaas/guides/configuration-guide/configuration-repository/#parameter-reference>
+* Parameter reference: <https://osism.tech/docs/guides/configuration-guide/configuration-repository/#parameter-reference>
 * Later (on the manager host in `/opt/configuration/`) : Adjust the inventory
     - List the nodes and add them to the roles `[manager]`, `[monitoring]`, `[control]`,
       `[network]`, `[ceph-control]`, `[ceph-resource]`, `[ceph-rgw:children]` in `inventory/20-roles`.
@@ -354,14 +528,14 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
 * `osism apply configuration` gets the latest status from git (overwrites local changes if any)
 
 #### Manager
-* Setting the operator user: <https://docs.scs.community/docs/iaas/guides/deploy-guide/manager#step-1-create-operator-user>
+* Setting the operator user: <https://osism.tech/docs/guides/deploy-guide/manager#step-1-create-operator-user>
 * Also apply network settings, bootstrap and reboot the manager node
 * Deploy the manager service and set vault password (it's in your keepass vault if you did not move it elsewhere)
 * These steps should work without any errors
 
 #### Nodes
 * Do the bare metal provisioning as described before
-* Make them managed by applying the bootstrap steps <https://docs.scs.community/docs/iaas/guides/deploy-guide/bootstrap>
+* Make them managed by applying the bootstrap steps <https://osism.tech/docs/guides/deploy-guide/bootstrap>
 * All nodes should be reachable (cf. step 6 with `osism apply ping`), resolve any issues prior to proceeding
     - Remember that an ansible ping verifies that ansible can log in via ssh to manage the host
     - This is why the final steps are `osism apply sshconfig` and `osism apply known-hosts`
@@ -370,31 +544,101 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
 * If you use VLANs, Link aggregation (802.3ad, also called bonding or trunking), you will need to adjust
   your network settings.
 * For Ubuntu hosts (since OSISM 6.1.0), netplan is used,
-  read <https://docs.scs.community/docs/iaas/guides/configuration-guide/network>
+  read <https://osism.tech/docs/guides/configuration-guide/network>
 * If you want to proxy outgoing internet access on the manager node (e.g. for security reasons),
-  read <https://docs.scs.community/docs/iaas/guides/configuration-guide/proxy>
+  read <https://osism.tech/docs/guides/configuration-guide/proxy>
 * Extra hints for the loadbalancer, e.g. TLS/SSL certificate deployment:
-  read <https://docs.scs.community/docs/iaas/guides/configuration-guide/loadbalancer>
+  read <https://osism.tech/docs/guides/configuration-guide/loadbalancer>
     - Note: This is for the loadbalancer(s) in from of the Infra/OpenStack API services, not the
       loadbalancers that cloud users create with the OpenStack octavia service
 
 #### Nodes: Infrastructure, Network, Logging/Monitoring, Ceph, OpenStack
-* <https://docs.scs.community/docs/iaas/guides/deploy-guide/services/>
+* <https://osism.tech/docs/guides/deploy-guide/services/>
   covers this well
 * Maintain the order: infra, network, logging/mon, kubernetes (optional), ceph, OpenStack
 * This can be scripted (and there are scripts e.g. for testbed deployments)
     - If you use your own script, ensure you do *not* ignore errors
     - `set -e` is a must in shell scripts
 * For Ceph, the deployment with ceph-ansible is still the default, this will change to
-  ceph rook in the future. Ensure you have kubernetes/k3 set up
+  cephadm (or ceph rook) in the future. Ensure you have kubernetes/k3 set up for ceph rook.
 
-#### OpenStack tuning
-* See <https://docs.scs.community/docs/iaas/guides/configuration-guide/openstack/>
+### OpenStack tuning
+* kolla-ansible merges files from `environments/kolla/files/overlays/service/config-subservice.conf`
+  into generated configuration.
+* See <https://osism.tech/docs/guides/configuration-guide/openstack/>
     - E.g. 3x CPU over-subscription assumes that you have HT(SMT) enabled, you might increase to 5x otherwise.
 * It also explains the mechanism how config file templating works and how these are rolled out with
   the ansible playbooks (example: OpenSearch)
+* Reserve cores and memory
 * The service-specific hints mostly link the upstream OpenStack docu
 * The Commons and Services chapters have kolla and OSISM specific information
+
+#### Tuning examples
+```ini
+# environments/kolla/files/overlays/nova/nova-compute.conf
+[DEFAULT]
+# SCS std for hyperthreaded CPUs, otherwise 5
+cpu_allocation_ratio = 3
+# For full HCI setup
+reserved_host_memory_mb = 32768
+reserved_host_cpus = 4
+# Tolerate slower block dev allocation
+block_device_allocate_retries = 70
+block_device_allocate_retries_interval = 3
+```
+
+This sets CPU oversubscription to 3 (suitable if Hyperthreading is enabled),
+and reserves 32MiB RAM and 4 Hyperthreads for the host (so this is not used
+for VMs). These values are roughly suitable in a hyperconverged setup with
+2 OSDs on the compute node ...
+
+See above sizing notes on suitable reservation sizes.
+
+It also slightly increases the time that nova waits for block device
+(cinder) provisioning of virtual disks upon instance creation from the
+default 60x3s = 180s to 70x3s = 210s.
+
+Roll out with `osism apply nova`.
+
+```ini
+# environments/kolla/files/overlays/nova/nova-scheduler.conf
+[filter_scheduler]
+build_failure_weight_multiplier = 2.0
+#host_subset_size = 2
+```
+
+This avoids a sind build failure to take the host out of scheduling
+(until nova-compute is restarted or the cloud runs out of capacity
+or other hosts fail as well).
+
+Commented out is a change the causes the nova-schduler to randomly
+chose between the two best scheduler candidates (recommended only
+for larger clouds).
+
+Roll out with `osism apply nova` (again).
+
+```ini
+# environments/kolla/files/overlays/neutron/ml2_conf.ini
+[ovn]
+dns_servers = IP.OF.DNS.SERVER, IP.OF.DNS.SERVER2
+# https://docs.openstack.org/neutron/latest/ovn/gaps.html
+```
+
+This provides a fallback DNS if subnet / instance don't configure DNS explicitly.
+Rolled out with `osism apply neutron`.
+
+```ini
+# environments/kolla/files/overlays/glance/glance-api.conf
+[rbd]
+rbd_store_chunk_size = 4
+```
+
+This aligns stored images block size with volume default block size of 4MB.
+Volumes from raw images are created as COW Snapshots, which saves disk
+space and drastically reduces the time until booting of a created instance
+starts. Writes to the disk however cause a read-modify-write cycle with
+the `rbd_chunk_size`. Using 4MB (compared to the 8MB defaults) does so on
+smaller blocks.
 
 ### Validating that the installed environment works
 
@@ -411,7 +655,7 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
 
 #### Visual inspection
 * For an overview of dashboards look at CiaB or testbed documentation
-  at <https://docs.scs.community/docs/iaas/guides/configuration-guide/openstack/>
+  at <https://osism.tech/docs/guides/configuration-guide/openstack/>
 * The most important ones are linked from Homer at: <https://homer.services.YOURCLOUDDOMAIN/>
     - Homer should work and link roughly s dozen further dashboards
 * Check whether Ceph is healthy
@@ -430,6 +674,8 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
 * RefStack is the framework used by (former) OpenStack InterOp Working Group to run the
   InterOp Guideline tests. In general, you can use it to run sets of Tempest tests.
     - Tempest is the test framework and test case collection from OpenStack
+    - Note that RefStack is no longer maintained well upstream; you may need to
+      set up rally manually instead.
 * SCS Compliance test
     - Check whether you fulfill the SCS-compatible IaaS tests (currently version 5.1):
         * Check out <https://github.com/SovereignCloudStack/standards> and go to `standards/Tests/`
@@ -443,7 +689,7 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
   #  cloud "test" defined in clouds/secure.yaml
   ./scs-compliance-check.py scs-compatible-iaas.yaml --subject=CiaB-KG7 -a os_cloud=test
   ```
-* OpenStack Health Monitor
+* OpenStack Health Monitor (OSHM)
     - Will cover this later
     - Running one iteration manually is a good scenario test for the core functionality
       (Catalog, Router, Networks, Subnets, Floating IPs, Security Groups, Images, Block Storage,
@@ -451,6 +697,9 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
        of other services.
     - You should get a run without any error or timeout -- i.e. no red color.
     - Same comment as for SCS Compliance test: Run this with normal project `member` privileges, not as admin
+* In case you don't want to set up permanent OSHM monitoring anyway, you may find the
+  [Simple Stress](https://osism.tech/docs/guides/operations-guide/openstack/tools/simple-stress)
+  tool easier to use.
 
 ### The OSISM tool
 
@@ -496,7 +745,7 @@ See also <https://docs.scs.community/docs/iaas/guides/concept-guide/bom>
           require customer communication or approval from your security team
         * Same procedure: push to repo and use the above osism commands
 * Read recommendations how to work with git branches
-  <https://docs.scs.community/docs/iaas/guides/configuration-guide/manager#working-with-git-branches>
+  <https://osism.tech/docs/guides/configuration-guide/manager#working-with-git-branches>
 * Review is good, testing is better
     - Take reviews seriously!
         * Be mindful of hierarchies or cultural habits that e.g. prevent questioning higher ranked people

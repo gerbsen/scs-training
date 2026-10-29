@@ -18,9 +18,9 @@ thanks: |
   OSBA in most countries.
 copyright: ITU
 date: | 
-  v1.1  
-  2025-07-17  
-  <br/>   
+  v1.6.0  
+  2026-10-18
+  <br/><br/>  
   ![SCS logo](scs-bw.png){width=200}
 license: CC-BY-SA-4.0
 documentclass: book
@@ -45,6 +45,8 @@ header-includes:
   - \newunicodechar{│}{\textSFxi}
   - \usepackage{fancyhdr}
   - \pagestyle{fancy}
+  - \fancyhead[LE,RO]{\small\slshape\rightmark}
+  - \fancyhead[RE,LO]{\small\slshape\leftmark}
   - \fancyfoot[CO,CE]{\small\emph{SCS training docs (c) 2025 ITU, S7n, CC-BY-SA-4.0}}
   - \fancyfoot[LE,RO]{\thepage}
   - \renewenvironment{Shaded}{\small}{}

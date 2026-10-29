@@ -19,9 +19,9 @@
 ### Typical user challenges
 
 #### Floating IPs
-* Making a VM reachable from the outside typically requires several steps on OpenStack
-    - Connecting the network port to a network that is connected to a router that is connected to the outside network
-    - Allocating a floating IP from the outside network and attaching it to the network port of that VM
+* Making a VM reachable from the outside typically requires several steps on OpenStack (which may surprise newcomers)
+    - Connecting the VM's network port to a network that is connected to a router that is connected to the outside network
+    - Allocating a floating IP from the outside network and associating it with the network port of that VM
     - Ensuring security groups allow (incoming) traffic to that network port
     - The VM itself may have firewalling functionality that needs to be adjusted (or disabled)
 * Floating IPs are **not** visible from within the VM
@@ -36,6 +36,7 @@
         * This means all ports inside the group can freely communicate with each other (thus the name group)
     - Behind the scenes, when referring to a remote security group, the IP addresses belonging to that group are whitelisted
         * This is secure due to port security, which means that network ports cannot spoof their source IP address
+            - When using non-private fixed IP address ranges, external traffic might reach your VM without being subject to port security rules, so take extra care not to allow such traffic in if you really have to work with non-private IPs. (Private IP addresses here really refer to the non-routable IPv4 networks 192.168/16, 172.16/12 and 10/8 networks.)
             - Port security can be disabled per port, if you want to e.g. create VMs that do advanced networking things such as NAT
             - Be aware that such ports can then circumvent security group rules by spoofing their source IP address
         * This also means that adding a port to a security group that's referenced by this or by another security group can mean updating a lot of network filtering rules
@@ -216,13 +217,27 @@ clouds:
 * Horizontal scaling (using more VMs to work in parallel) is typically easy to do with stateless VMs
 * Vertical scaling (creating larger VMs) is supported by OpenStack
     - You can hot(un)plug disks and network ports into running VMs
-    - Changing the number of vCPUs or the amour of memory requires a VM resize operation
+    - Changing the number of vCPUs or the amount of memory requires a VM resize operation
         * This causes a reboot of the VM
         * Don't forget to confirm the resize after the rebooted VM has been checked
 * Autoscaling (horizontal scaling) in OpenStack can be done via [heat](https://wiki.openstack.org/wiki/Heat/AutoScaling) orchestration templates
     - This is not very popular and SCS standards do not require this functionality to be present
     - Many workloads that would benefit from autoscaling are containerized and use the Kubernetes mechanisms for autoscaling
 
+#### Client tooling
+* There are numerous [openstack SDKs](https://wiki.openstack.org/wiki/SDKs) available.
+    - The [Python openstackSDK](https://docs.openstack.org/openstacksdk/latest/) is well maintained and the standard way to programmatically interact with OpenStack APIs.
+    - The command line tools [openstackclient CLI](https://docs.openstack.org/python-openstackclient/latest/) are derived from the python SDK
+    - Both are available as distro packages on most Linux distros or can be installed via `pip` (e.g. in a `venv`).
+* Scripting with the python CLI tools is not ideal -- the repeated startup cost (python loading libraries ...) and the new authentication on each invocation lead to slow performance.
+    - Using python directly to automate is much better.
+    - Or use terraform, ansible, ...
+* An interesting project creates openAPI specs for the APIs and generates rust clients:
+    * On <https://github.com/gtema/openstack/>
+    * openAPI specs derived from the implementation match real behavior
+        - Not all services are covered completely yet, but it's pretty good for the OpenStack core services
+    * The rust CLI client `osc` has amazing performance and a high level of consistency
+    * There is a `k9s`-like terminal user interface `ostui` which is nice for inspection
 
 ### Security incidents (provider perspective)
 * As public cloud provider, beware that you will have people sign up for your cloud with stolen credit card data

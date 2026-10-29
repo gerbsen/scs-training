@@ -80,11 +80,20 @@ options:
                         Path to the directory containing all image files or path to single image file
 ```
 
-#### Available images (as of 2025-05)
-- Debian 12, Debian 11
-- Ubuntu 24.04, Ubuntu 22.04, Ubuntu 22.04 Minimal
-- Rocky 9, AlmaLinux 9, CentOS Stream 9
-- openSUSE Leap 15.6
+Use `--latest --hide` to update all images after having updated the image definitions with
+`contrib/update.py`. The code comes from <https://github.com/osism/openstack-image-manager/>.
+
+It may be more flexible to deploy the openstack-image-manager on a normal Linux system of
+an operator. In particular, the `contrib/update.py` script can write directly to the used
+image definitions, so you don't need to inject them into via `docker cp` into the `manager-openstack-1`
+container on the manager.
+
+
+#### Available images (as of 2026-08)
+- Debian 13, Debian 12, Debian 11
+- Ubuntu 26.04, Ubuntu 24.04, Ubuntu 22.04, (and Minimal variants)
+- Rocky 10, Rocky 9, AlmaLinux 10, AlmaLinux 9, CentOS Stream 9
+- openSUSE Leap 16.0, 15.6
 - Cirros 0.6.3, Cirros 0.6.2
 
 #### Example
@@ -147,6 +156,22 @@ Image was converted to raw to allow for Copy-on-Write usage with ceph
     - Workflow triggered from customer platform
 
 <!--TODO Explaining domains, users, roles, ... here-->
+
+### Creating projects (for new users)
+The is a [Project Manager](https://github.com/osism/openstack-project-manager) tool,
+which can be used to create domains, projects, users default networks and manage quota.
+It may be used as part of the onboarding workflow for new users.
+It is [well documented](https://osism.tech/docs/guides/operations-guide/openstack/tools/project-manager).
+When using `manaage.py`, be careful to limit it to the domains that you want to affect;
+it defaults to affecting all, which may be an unwelcome surprise.
+
+Amongst the things that OpenStack project manager supports are:
+
+* Creating a new domain with an initial project in it
+* Creating a new user in that domain with member rights in the project
+* Assigning quota to a project (in terms of templates or multiples of the values)
+* Sharing images and services inside a domain (across multiple projects)
+
 
 ### Assignments Manager
 

@@ -2,6 +2,7 @@
 
 ## Course Overview
 This course provides an introduction to SCS Monitoring, a scalable, highly available monitoring stack based on Prometheus, Thanos, Grafana and Loki. The course contains brief overview of used technologies as well as examples and demonstrations using KinD.
+Note that the SCS Monitoring project is now maintained and evolved in the ALASCA ARKO project.
 
 ## Introduction
 - Course goals
@@ -65,7 +66,7 @@ The SCS Monitoring Platform supports multi-cluster monitoring, enabling the obse
 ### IAAS Monitoring
 ![IaaS Monitoring](images/iaas.png){width=480}
 
-IaaS monitoring uses openstack exporter. The user needs to supply credentials in form of `clouds.yaml` Currently, there's no dNation dashboard, we recommend to use [this dashboard](https://grafana.com/grafana/dashboards/21085-openstack-overview/). See [Dashboards and Customization](#dashboards-and-customisation) on how to add 3rd party dashboards.
+IaaS monitoring uses openstack exporter. The user needs to supply credentials in form of `clouds.yaml` Currently, there's no dNation dashboard, we recommend to use [this dashboard](https://grafana.com/grafana/dashboards/21085-openstack-overview/). See [Dashboards and Customization](#dashboards-and-customization) on how to add 3rd party dashboards.
 
 ## Example Deployments
 This section provides example deployments of single-cluster, multi-cluster and IAAS monitoring using [KinD](https://kind.sigs.k8s.io/)
@@ -446,4 +447,4 @@ dnation-kubernetes-monitoring:
 ### Resources
 * [SCS Monitoring Documentation](https://docs.scs.community/docs/operating-scs/components/monitoring/docs/overview)
 * [dNation Kubernetes Monitoring](https://dnationcloud.github.io/kubernetes-monitoring/)
-
+* [ALASCA ARKO](https://alasca.cloud/projects/arko/)

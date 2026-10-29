@@ -29,7 +29,7 @@
 * OSDs keep the data by writing them to local storage and by replicating them to other OSDs
     - Several options exist for local storage, preferred format is bluestore nowadays
     - Can separate data from metadata drives, the latter being more important for performance
-    - OSDs are aware of their neighbours and report failures to contact them to mons
+    - OSDs are aware of their neighbors and report failures to contact them to mons
 * Data is sorted into *pools*
     - Pools can have their individual replication strategy, scrubbing policy etc.
     - A pool has a set of *placement groups* associated with it
@@ -115,14 +115,12 @@
 ### Ceph Dashboard
 
 #### Where?
-* The Ceph Dashboard is available at <https://manager.systems.YOURCLOUDDOMAIN:7000/>,
+* The Ceph Dashboard is available at <https://manager.systems.YOURCLOUDDOMAIN:8160/>,
   e.g. on <http://manager.systems.in-a-box.cloud:7000/> on a CiaB system
-  (after connecting via the wireguard tunnel).
-* All dashboards on a CiaB system are linked from
-  <https://docs.scs.community/docs/iaas/deployment-examples/cloud-in-a-box/#webinterfaces>.
-  Remember that you will need to import the CA certificate or trust the certificate from
-  CiaB interfaces.
-* The homer service also links some dashboards.
+  (after connecting via the wireguard tunnel - remember to trust certificates there).
+* All dashboards on a testbed deployment are linked from
+  <https://osism.tech/docs/testbed/usage#web-interfaces>
+* The homer service also links the most important dashboards.
   Homer is at <https://homer.services.YOURCLOUDDOMAIN/>
 
 #### Ceph Dashboard: Main page
@@ -202,16 +200,21 @@
   systemctl stop ceph-osd@NN
   systemctl disable ceph-osd@NN
   ```
-* See more examples in <https://docs.scs.community/docs/iaas/guides/operations-guide/ceph/>
+* See more examples in <https://osism.tech/docs/guides/operations-guide/ceph/>
 
 * Upstream ceph docu: <https://docs.ceph.com/en/reef/rados/operations/>
   (This is for reef, use the version that you have in use.)
 
 #### Ceph tuning
-* See hints at <https://docs.scs.community/docs/iaas/guides/configuration-guide/ceph/>
+* See hints at <https://osism.tech/docs/guides/configuration-guide/ceph/>
 * Kernel sysctl settings: Typically suitable out of the box in OSISM deployment
 * Defaults for PGs are set for a small cluster. Enable autoscaler for pools or increase manually for larger clusters (10+ OSDs)
 * There are also hints how to setup WAL and DB if those are not co-located on the same NVMe anyway
+* Enable async (1 thread) discard for all ssd/nvme type OSDs to reduce wear (and performance degradation).
+```shell
+ceph config set osd/class:ssd bdev_enable_discard true
+ceph config set osd/class:ssd bdev_async_discard_threads 1
+```
 
 ### Planning hardware for Ceph
 
@@ -227,7 +230,8 @@
     - Only consider rotating disks if you want to store large amounts of object storage data and you can live with
       lower performance. Create a pool with fast solid-state storage for fast volume storage then. (You can have several.)
     - Some flash devices promise better performance when using 4k instead of (default) 512B sectors; you need to reformat
-      them if you want to use this (losing all data on them!), see <https://docs.scs.community/docs/iaas/guides/operations-guide/ceph/#check-format-of-a-nvme-device>
+      them if you want to use this (losing all data on them!), see <https://osism.tech/docs/guides/operations-guide/ceph/#check-format-of-a-nvme-device>
+    - You can create erasure-coded pools for slower storage, but it's not recommended for block storage.
 * Invest into Enterprise SSD/NVMe
     - 5y @ 3 DWPD rating recommended when exposed as high performance block storage
     - Power Loss Protection allows safe write caching (required by SCS flavor spec for local storage)

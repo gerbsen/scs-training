@@ -36,7 +36,10 @@
     * HCI vs. decomposed
     * Optional Seed node
 * [Bootstrapping the manager](Kolla-OSISM.md#osism-installation-workflow)
-    * Performing the other installation steps
+* [OpenStack tuning](Kolla-OSISM.md#openstack-tuning)
+    * Storage tuning (ceph)
+    * Reserving resources for your hosts
+    * Scheduler tuning
 * [Validating the results](Kolla-OSISM.md#validating-that-the-installed-environment-works)
     * ARA
     * Smoke tests
@@ -71,6 +74,13 @@
     * Register public images
     * Onboard a new user (in her own domain)
 
+## [Adding GPU support to virtual machines](Virt-GPU-Support.md)
+* [GPU virtualization vs. pass-through](Virt-GPU-Support.md#virtualized-versus-pci-pass-through)
+* [Host preparation](Virt-GPU-Support.md#host-hypervisor-preparation)
+* [Host aggregates](Virt-GPU-Support.md#host-aggregates-with-gpus)
+* [Flavor registration](Virt-GPU-Support.md#flavor-registration)
+* [Config repository](Virt-GPU-Support.md#doing-it-all-via-the-configuration-repository)
+
 ## [Performance and Compliance monitoring](Perf-Compl-Monitoring.md)
 * [Netbox, prometheus, Netdata, OpenSearch](Perf-Compl-Monitoring.md#osism-manager-management-tools)
 * [OpenStack Health Monitor](Perf-Compl-Monitoring.md#openstack-health-monitor-oshm)
@@ -98,9 +108,20 @@
 * [Stuck Loadalancers](Maintenance.md#stuck-loadbalancers)
 * [Stuck RabbitMQ](Maintenance.md#rabbitmq-issues)
 * [Power loss on storage](Maintenance.md#power-loss-on-storage)
-* [Troubleshooting Guide](https://docs.scs.community/docs/iaas/guides/troubleshooting-guide/)
+* [Troubleshooting Guide](https://osism.tech/docs/guides/troubleshooting-guide/)
 * [Practical assignment](Maintenance.md#practical-assignment)
     * Recover from hang volume
+
+## [Recovering from a power outage](Crash-Recovery.md)
+* [Manager](Crash-Recovery.md#manager)
+* [Ceph](Crash-Recovery.md#verifying-ceph)
+* [Redis](Crash-Recovery.md#redis)
+* [Database](Crash-Recovery.md#database-mariadb)
+* [RabbitMQ](Crash-Recovery.md#queuing-rabbitmq)
+* [OpenStack](Crash-Recovery.md#openstack-services)
+* [VMs](Crash-Recovery.md#vms)
+* [Ceph Locks](Crash-Recovery.md#vms-with-read-only-volumes-ceph-locks)
+* [Resource cleanup](Crash-Recovery.md#stale-openstack-resources)
 
 ## [Updates and Upgrades](Updates.md)
 * [Security advisories and security updates](Updates.md#security-updates)
